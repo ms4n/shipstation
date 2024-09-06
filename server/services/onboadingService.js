@@ -7,14 +7,13 @@ const {
   startShippingPortfolioTool,
   startShippingLandingPageTool,
   TOOLS,
-  imageFinderTool,
   imageAnalysisTool,
 } = require("../config/tools");
 const {
   handleOnboardingToolUse,
 } = require("../controllers/onboardingToolController");
 const { AnthropicService } = require("../services/anthropicService");
-const { getUserProfile, insertMessage } = require("../services/dbService");
+const { getUserProfile } = require("../services/dbService");
 const { SHIP_TYPES, DEFAULT_MESSAGES } = require("./constants");
 
 async function processConversation({
@@ -38,14 +37,14 @@ async function processConversation({
 
     if (shipType) {
       if (shipType === SHIP_TYPES.PORTFOLIO) {
-        tools.push(getDataForPortfolioTool);
+        tools.push(ctoTool);
         tools.push(startShippingPortfolioTool);
-        messages = DEFAULT_MESSAGES[shipType];
+        messages = [{ role: "user", content: message }];
       }
       if (shipType === SHIP_TYPES.LANDING_PAGE) {
-        tools.push(getDataForLandingPageTool);
+        tools.push(ctoTool);
         tools.push(startShippingLandingPageTool);
-        messages = DEFAULT_MESSAGES[shipType];
+        messages = [{ role: "user", content: message }];
       }
       if (shipType === SHIP_TYPES.PROMPT) {
         tools.push(ctoTool);
@@ -62,9 +61,13 @@ async function processConversation({
       //   role: "user",
       //   content: messages[0].content,
       // });
+      const systemPrompt =
+        shipType === SHIP_TYPES.PORTFOLIO
+          ? "Your task is to create a portfolio website for the user. Analyze the user's requirements and use the start_shipping_portfolio_tool to begin the project. Then, coordinate with the cto_tool to develop and deploy the website."
+          : "Your task is to create a landing page for the user. Analyze the user's requirements and use the start_shipping_landing_page_tool to begin the project. Then, coordinate with the cto_tool to develop and deploy the website.";
+
       currentMessage = await client.sendMessage({
-        system:
-          "Your task is to deploy a website for the user and share them the deployed url. Use the search tool to get the initial data and pass it on to product manager tool",
+        system: systemPrompt,
         messages,
         tools,
       });
@@ -107,6 +110,7 @@ async function processConversation({
           messages,
           userId,
           client,
+          shipType,
         });
         messages.push({ role: "user", content: toolResult });
 
@@ -204,7 +208,6 @@ function handleOnboardingSocketEvents(io) {
           sendEvent("creationAborted", {
             message: "Website creation was aborted",
           });
-        } else {
           console.error("Error in processConversation:", error);
         }
       }

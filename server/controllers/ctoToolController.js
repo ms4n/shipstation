@@ -1,17 +1,20 @@
 const axios = require("axios");
 
-const fileService = require("../services/fileService");
-const { codeAssitant } = require("../services/codeService");
+const { codeAssistant } = require("../services/codeService");
 
 const searchService = require("../services/searchService");
 const { analyzeImages } = require("../services/analyzeImageService");
 const { TOOLS } = require("../config/tools");
+
+const FileService = require("../services/fileService");
+const fileService = new FileService();
 
 async function handleCTOToolUse({
   tool,
   projectFolderName,
   sendEvent,
   client,
+  shipType,
 }) {
   if (tool.name === TOOLS.SEARCH) {
     const searchQuery = tool.input.query;
@@ -34,41 +37,46 @@ async function handleCTOToolUse({
     ];
 
     if (images.length > 0) {
-      // Add images to the message content
       for (const image of images) {
         try {
-          // Fetch the image
           const response = await axios.get(image.url, {
             responseType: "arraybuffer",
+            timeout: 5000, // Add a timeout to prevent hanging
           });
 
-          // Get the Content-Type from the response headers
           const contentType = response.headers["content-type"];
+          const acceptedTypes = [
+            "image/jpeg",
+            "image/png",
+            "image/gif",
+            "image/webp",
+          ];
 
-          // Only process if it's an accepted image type
-          if (
-            contentType &&
-            ["image/jpeg", "image/png", "image/gif", "image/webp"].includes(
-              contentType
-            )
-          ) {
-            const imageData = Buffer.from(response.data).toString("base64");
+          if (contentType && acceptedTypes.includes(contentType)) {
+            const imageData = Buffer.from(response.data);
 
-            messageContent.push({
-              type: "image",
-              source: {
-                type: "base64",
-                media_type: contentType,
-                data: imageData,
-              },
-            });
+            // Additional check for image validity
+            if (imageData.length > 0) {
+              const base64Data = imageData.toString("base64");
+
+              messageContent.push({
+                type: "image",
+                source: {
+                  type: "base64",
+                  media_type: contentType,
+                  data: base64Data,
+                },
+              });
+            } else {
+              console.error(`Empty image data for ${image.url}`);
+            }
           } else {
             console.error(
               `Unsupported media type ${contentType} for image ${image.url}`
             );
           }
         } catch (error) {
-          console.error(`Error processing image ${image.url}:`, error);
+          console.error(`Error processing image ${image.url}:`, error.message);
         }
       }
     }
@@ -172,10 +180,12 @@ async function handleCTOToolUse({
   } else if (tool.name === TOOLS.TASK_ASSIGNER) {
     const { file_name, task_guidelines } = tool.input;
 
-    const fileContent = await fileService.readFile(
+    const fileContent = await fileService.getFile(
       `${projectFolderName}/${file_name}`
     );
+
     console.log("reading file: ", `${projectFolderName}/${file_name}`);
+
     const updatedFileContent =
       `Filename: ${projectFolderName}/${file_name}` +
       `\n\n` +
@@ -187,14 +197,17 @@ async function handleCTOToolUse({
     sendEvent("progress", {
       message: `Writing code for ${file_name}`,
     });
-    const resp = await codeAssitant({
+    const resp = await codeAssistant({
       query: updatedFileContent,
       filePath: `${projectFolderName}/${file_name}`,
       client,
+      shipType,
     });
+
     sendEvent("progress", {
       message: `Code generated for ${file_name} ✅`,
     });
+
     return [
       {
         type: "tool_result",
@@ -202,7 +215,7 @@ async function handleCTOToolUse({
         content: [
           {
             type: "text",
-            text: `${resp.description}`,
+            text: `${resp.status} + ${resp.description}`,
           },
         ],
       },
