@@ -2,7 +2,7 @@ import { useContext, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Fuel, Sparkles } from "lucide-react";
+import { Fuel, Sparkles, X } from "lucide-react";
 import { useSocket } from "@/context/SocketProvider";
 import useDisclosure from "@/hooks/useDisclosure";
 import ChoosePaymentOptionDialog from "./ChoosePaymentOptionDialog";
@@ -27,6 +27,9 @@ const ShipForm = ({ type, reset }) => {
   const [deployedWebsiteSlug, setDeployedWebsiteSlug] = useState("");
   const { isOpen, onOpen, onClose } = useDisclosure();
   const [isKeyValidating, setIsKeyValidating] = useState(false);
+  const [uploadedImage, setUploadedImage] = useState(null);
+  const [imageUrl, setImageUrl] = useState("");
+  const [imageUrlError, setImageUrlError] = useState("");
 
   const navigate = useNavigate();
   const { user, userLoading, availableShips, anthropicKey, setAnthropicKey } =
@@ -44,11 +47,18 @@ const ShipForm = ({ type, reset }) => {
   } = useDisclosure();
 
   const startProject = () => {
-    sendMessage("startProject", {
-      shipType: type,
-      apiKey: anthropicKey,
-      message: requirements,
-    });
+    const formData = new FormData();
+    formData.append("shipType", type);
+    formData.append("apiKey", anthropicKey);
+    formData.append("message", requirements);
+
+    if (uploadedImage) {
+      formData.append("image", uploadedImage);
+    } else if (imageUrl) {
+      formData.append("imageUrl", imageUrl);
+    }
+
+    sendMessage("startProject", formData);
     onClose();
     onLoaderOpen();
   };
@@ -69,6 +79,28 @@ const ShipForm = ({ type, reset }) => {
   const handleSubmitAnthropicKey = (apiKey) => {
     sendMessage("anthropicKey", { anthropicKey: apiKey });
     setIsKeyValidating(true);
+  };
+
+  const handleImageUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setUploadedImage(file);
+      setImageUrl("");
+      setImageUrlError("");
+    }
+  };
+
+  const handleImageUrlChange = (e) => {
+    const url = e.target.value;
+    setImageUrl(url);
+    setUploadedImage(null);
+
+    // Basic URL validation
+    if (url && !url.match(/^https?:\/\/.+\.(jpg|jpeg|png|gif|webp)$/i)) {
+      setImageUrlError("Please enter a valid image URL");
+    } else {
+      setImageUrlError("");
+    }
   };
 
   useEffect(() => {
@@ -126,6 +158,46 @@ const ShipForm = ({ type, reset }) => {
           value={requirements}
           onChange={(e) => setRequirements(e.target.value)}
         />
+        <div className="w-full mb-4">
+          <label className="block text-sm font-medium text-foreground mb-2">
+            Image (optional)
+          </label>
+          <div className="flex flex-col sm:flex-row gap-4">
+            <div className="flex-1">
+              <input
+                type="file"
+                id="image-upload"
+                accept="image/*"
+                onChange={handleImageUpload}
+                disabled={!!imageUrl}
+                className="w-full text-sm text-foreground file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary file:text-primary-foreground hover:file:bg-primary/90 disabled:opacity-50"
+              />
+              {uploadedImage && (
+                <p className="mt-2 text-sm text-green-500">
+                  Image selected: {uploadedImage.name}
+                </p>
+              )}
+            </div>
+            <div className="flex-1">
+              <input
+                type="url"
+                placeholder="Or enter image URL"
+                value={imageUrl}
+                onChange={handleImageUrlChange}
+                disabled={!!uploadedImage}
+                className="w-full px-3 py-2 text-sm rounded-md border border-input bg-background text-foreground disabled:opacity-50"
+              />
+              {imageUrlError && (
+                <p className="mt-2 text-sm text-red-500">{imageUrlError}</p>
+              )}
+              {imageUrl && !imageUrlError && (
+                <p className="mt-2 text-sm text-green-500">
+                  Valid image URL entered
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
         <div className="flex flex-col sm:flex-row w-full justify-between items-center space-y-4 sm:space-y-0">
           <TooltipProvider>
             <Tooltip>
